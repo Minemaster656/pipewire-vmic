@@ -39,6 +39,10 @@ GENDER_VOICE_MAP: dict[str, dict[tuple[str, str], str | tuple[str, str]]] = {
         ("ru", "male"): ("ru_RU", "dmitri"),
         ("ru", "female"): ("ru_RU", "irina"),
     },
+    "supertonic": {
+        ("en", "male"): "M1",
+        ("en", "female"): "F1",
+    },
 }
 
 
@@ -288,6 +292,60 @@ class PiperTTSProvider(TTSProvider):
         return piper_voice
 
 
+class SupertonicTTSProvider(TTSProvider):
+    _QUALITY_STEPS = {"low": 5, "medium": 8, "high": 12}
+
+    def __init__(self, quality: str = "medium", lang: str = "en"):
+        self._quality = quality
+        self._lang = lang or "na"
+        self._tts = None
+
+    @property
+    def name(self) -> str:
+        return "supertonic"
+
+    async def list_voices(self) -> list[Voice]:
+        return [
+            Voice(name="M1", gender="Male", locale=""),
+            Voice(name="M2", gender="Male", locale=""),
+            Voice(name="M3", gender="Male", locale=""),
+            Voice(name="M4", gender="Male", locale=""),
+            Voice(name="M5", gender="Male", locale=""),
+            Voice(name="F1", gender="Female", locale=""),
+            Voice(name="F2", gender="Female", locale=""),
+            Voice(name="F3", gender="Female", locale=""),
+            Voice(name="F4", gender="Female", locale=""),
+            Voice(name="F5", gender="Female", locale=""),
+        ]
+
+    async def synthesize(self, text: str, voice: str, *, speed: float = 1.0) -> bytes:
+        import soundfile as sf
+        from supertonic import TTS
+
+        loop = asyncio.get_running_loop()
+
+        if self._tts is None:
+            self._tts = await loop.run_in_executor(
+                None, lambda: TTS(auto_download=True)
+            )
+
+        def _run() -> bytes:
+            style = self._tts.get_voice_style(voice_name=voice)
+            total_steps = self._QUALITY_STEPS.get(self._quality, 8)
+            wav, _ = self._tts.synthesize(
+                text=text,
+                voice_style=style,
+                lang=self._lang,
+                speed=max(0.7, min(speed, 2.0)),
+                total_steps=total_steps,
+            )
+            buf = io.BytesIO()
+            sf.write(buf, wav.squeeze(), 44100, format="WAV")
+            return buf.getvalue()
+
+        return await loop.run_in_executor(None, _run)
+
+
 def resolve_voice(
     lang: str,
     gender: str,
@@ -298,7 +356,10 @@ def resolve_voice(
     if voice_name:
         return voice_name
 
-    entry = GENDER_VOICE_MAP.get(provider, {}).get((lang, gender))
+    provider_map = GENDER_VOICE_MAP.get(provider, {})
+    entry = provider_map.get((lang, gender))
+    if entry is None:
+        entry = provider_map.get(("en", gender))
     if entry is None:
         entry = GENDER_VOICE_MAP["edge-tts"][("en", "male")]
 

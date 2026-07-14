@@ -8,6 +8,7 @@ from cache import TTSCache
 from tts_provider import (
     EdgeTTSProvider,
     PiperTTSProvider,
+    SupertonicTTSProvider,
     TTSProvider,
     resolve_voice,
 )
@@ -19,11 +20,15 @@ def _make_provider(
     proxy: str | None = None,
     gpu: bool = False,
     gpu_provider: str | None = None,
+    quality: str = "medium",
+    lang: str = "en",
 ) -> TTSProvider:
     if name == "edge-tts":
         return EdgeTTSProvider(proxy=proxy)
     if name == "piper-tts":
         return PiperTTSProvider(gpu=gpu, gpu_provider=gpu_provider)
+    if name == "supertonic":
+        return SupertonicTTSProvider(quality=quality, lang=lang)
     raise ValueError(f"unknown provider: {name}")
 
 
@@ -41,7 +46,7 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--voice-name", type=str, help="Exact voice name (overrides -v/-l)")
     p.add_argument(
         "--provider",
-        choices=["edge-tts", "piper-tts"],
+        choices=["edge-tts", "piper-tts", "supertonic"],
         default="edge-tts",
         help="TTS provider",
     )
@@ -49,7 +54,7 @@ def parse_args() -> argparse.Namespace:
         "--quality",
         choices=["low", "medium", "high"],
         default="medium",
-        help="Piper voice quality/size (low=fastest, high=best)",
+        help="Voice quality: low=fastest, high=best (piper: model size, supertonic: inference steps)",
     )
     p.add_argument("--gpu", action="store_true", help="Use GPU (CUDA) for Piper")
     p.add_argument(
@@ -90,15 +95,18 @@ def parse_args() -> argparse.Namespace:
 async def list_voices(provider: TTSProvider, lang: str | None = None) -> None:
     voices = await provider.list_voices()
     for v in voices:
-        if lang and not v.locale.startswith(lang):
+        if lang and v.locale and not v.locale.startswith(lang):
             continue
-        print(f"{v.name:50s} {v.gender:8s} {v.locale}")
+        locale_display = v.locale if v.locale else "any"
+        print(f"{v.name:50s} {v.gender:8s} {locale_display}")
 
 
 async def run() -> None:
     args = parse_args()
 
-    provider = _make_provider(args.provider, args.proxy, args.gpu, args.gpu_provider)
+    provider = _make_provider(
+        args.provider, args.proxy, args.gpu, args.gpu_provider, args.quality, args.lang
+    )
 
     if args.list_voices:
         await list_voices(provider)
@@ -135,7 +143,9 @@ async def run() -> None:
         audio = Path(args.input_file).read_bytes()
         audio_suffix = Path(args.input_file).suffix or ".mp3"
     else:
-        audio_suffix = ".wav" if provider.name == "piper-tts" else ".mp3"
+        audio_suffix = (
+            ".wav" if provider.name in ("piper-tts", "supertonic") else ".mp3"
+        )
         voice = resolve_voice(
             args.lang, args.voice, args.provider, args.voice_name, args.quality
         )
