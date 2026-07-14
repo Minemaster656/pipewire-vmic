@@ -110,6 +110,7 @@ async def interactive(
     provider: TTSProvider, voice: str, args: argparse.Namespace
 ) -> None:
     audio_suffix = ".wav" if provider.name in ("piper-tts", "supertonic") else ".mp3"
+    cache = None if args.no_cache else TTSCache()
     loop = asyncio.get_running_loop()
 
     print(
@@ -126,7 +127,12 @@ async def interactive(
             continue
 
         try:
-            audio = await provider.synthesize(text, voice, speed=args.speed)
+            cache_key = f"{args.speed}:{text}"
+            audio = cache.get(provider.name, voice, cache_key) if cache else None
+            if audio is None:
+                audio = await provider.synthesize(text, voice, speed=args.speed)
+                if cache:
+                    cache.set(provider.name, voice, cache_key, audio)
             tasks = []
             if args.output:
                 tasks.append(
