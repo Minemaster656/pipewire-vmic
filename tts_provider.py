@@ -230,6 +230,26 @@ class PiperTTSProvider(TTSProvider):
             try:
                 await loop.run_in_executor(None, urlretrieve, url, str(dest))
             except HTTPError as e:
+                if e.code == 404 and quality != "medium":
+                    fallback = f"{lang_code}-{voice_name}-medium"
+                    print(
+                        f"warning: '{voice}' not found, falling back to '{fallback}'",
+                        file=__import__("sys").stderr,
+                    )
+                    await self._ensure_model(fallback)
+                    import shutil
+
+                    for ext, dest in [
+                        (".onnx", model_path),
+                        (".onnx.json", config_path),
+                    ]:
+                        src = (
+                            self._model_path(fallback)
+                            if ext == ".onnx"
+                            else self._config_path(fallback)
+                        )
+                        shutil.copy2(src, dest)
+                    return
                 raise RuntimeError(
                     f"voice '{voice}' not found at {url} ({e.code}). "
                     f"check available voices with --list-voices --provider piper-tts"
