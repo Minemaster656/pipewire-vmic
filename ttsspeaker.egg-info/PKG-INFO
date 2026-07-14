@@ -1,0 +1,8 @@
+Metadata-Version: 2.4
+Name: ttsspeaker
+Version: 0.1.0
+Summary: TTS CLI — text-to-speech with speaker/virtual-mic/file output
+Requires-Python: >=3.14
+Description-Content-Type: text/markdown
+Requires-Dist: edge-tts>=7.2.8
+Requires-Dist: platformdirs>=4.10.0

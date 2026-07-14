@@ -1,0 +1,5 @@
+audio
+cache
+main
+tts_provider
+vmic

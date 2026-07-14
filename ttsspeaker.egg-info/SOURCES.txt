@@ -1,0 +1,13 @@
+README.md
+audio.py
+cache.py
+main.py
+pyproject.toml
+tts_provider.py
+vmic.py
+ttsspeaker.egg-info/PKG-INFO
+ttsspeaker.egg-info/SOURCES.txt
+ttsspeaker.egg-info/dependency_links.txt
+ttsspeaker.egg-info/entry_points.txt
+ttsspeaker.egg-info/requires.txt
+ttsspeaker.egg-info/top_level.txt
