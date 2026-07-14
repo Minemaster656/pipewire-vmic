@@ -5,13 +5,25 @@ from pathlib import Path
 
 from audio import play_audio
 from cache import TTSCache
-from tts_provider import EdgeTTSProvider, TTSProvider, resolve_voice
+from tts_provider import (
+    EdgeTTSProvider,
+    PiperTTSProvider,
+    TTSProvider,
+    resolve_voice,
+)
 from vmic import setup as vmic_setup, teardown as vmic_teardown
 
 
-def _make_provider(name: str, proxy: str | None = None) -> TTSProvider:
+def _make_provider(
+    name: str,
+    proxy: str | None = None,
+    gpu: bool = False,
+    gpu_provider: str | None = None,
+) -> TTSProvider:
     if name == "edge-tts":
         return EdgeTTSProvider(proxy=proxy)
+    if name == "piper-tts":
+        return PiperTTSProvider(gpu=gpu, gpu_provider=gpu_provider)
     raise ValueError(f"unknown provider: {name}")
 
 
@@ -28,9 +40,31 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("-l", "--lang", default="en", help="Language code (en, ru, ...)")
     p.add_argument("--voice-name", type=str, help="Exact voice name (overrides -v/-l)")
     p.add_argument(
-        "--provider", choices=["edge-tts"], default="edge-tts", help="TTS provider"
+        "--provider",
+        choices=["edge-tts", "piper-tts"],
+        default="edge-tts",
+        help="TTS provider",
+    )
+    p.add_argument(
+        "--quality",
+        choices=["low", "medium", "high"],
+        default="medium",
+        help="Piper voice quality/size (low=fastest, high=best)",
+    )
+    p.add_argument("--gpu", action="store_true", help="Use GPU (CUDA) for Piper")
+    p.add_argument(
+        "--gpu-provider",
+        type=str,
+        metavar="PROVIDER",
+        help="ONNX execution provider (CUDAExecutionProvider, ROCMExecutionProvider, ...)",
     )
     p.add_argument("--proxy", type=str, help="Proxy URL (default: HTTPS_PROXY env)")
+    p.add_argument(
+        "--speed",
+        type=float,
+        default=1.0,
+        help="Playback speed multiplier (0.5-3.0, default 1.0)",
+    )
     p.add_argument("--list-voices", action="store_true", help="List available voices")
     p.add_argument(
         "--setup-vmic", action="store_true", help="Create virtual microphone sink"
@@ -64,7 +98,7 @@ async def list_voices(provider: TTSProvider, lang: str | None = None) -> None:
 async def run() -> None:
     args = parse_args()
 
-    provider = _make_provider(args.provider, args.proxy)
+    provider = _make_provider(args.provider, args.proxy, args.gpu, args.gpu_provider)
 
     if args.list_voices:
         await list_voices(provider)
@@ -101,17 +135,22 @@ async def run() -> None:
         audio = Path(args.input_file).read_bytes()
         audio_suffix = Path(args.input_file).suffix or ".mp3"
     else:
-        audio_suffix = ".mp3"
-        voice = resolve_voice(args.lang, args.voice, args.voice_name)
+        audio_suffix = ".wav" if provider.name == "piper-tts" else ".mp3"
+        voice = resolve_voice(
+            args.lang, args.voice, args.provider, args.voice_name, args.quality
+        )
         cache = TTSCache()
-        cached = None if args.no_cache else cache.get(provider.name, voice, args.text)
+        cache_key_text = f"{args.speed}:{args.text}"
+        cached = (
+            None if args.no_cache else cache.get(provider.name, voice, cache_key_text)
+        )
 
         if cached is not None:
             audio = cached
         else:
-            audio = await provider.synthesize(args.text, voice)
+            audio = await provider.synthesize(args.text, voice, speed=args.speed)
             if not args.no_cache:
-                cache.set(provider.name, voice, args.text, audio)
+                cache.set(provider.name, voice, cache_key_text, audio)
 
     tasks = []
     if args.output:
