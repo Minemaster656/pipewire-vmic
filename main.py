@@ -43,6 +43,12 @@ def parse_args() -> argparse.Namespace:
     p.add_argument(
         "-i", "--input-file", type=str, help="Play existing audio file instead of TTS"
     )
+    p.add_argument(
+        "--volume",
+        type=float,
+        default=0.7,
+        help="Playback volume 0.0-1.0 (default 0.7, applied to -o/-m only)",
+    )
     p.add_argument("text", nargs="?", help="Text to speak")
     return p.parse_args()
 
@@ -109,9 +115,13 @@ async def run() -> None:
 
     tasks = []
     if args.output:
-        tasks.append(play_audio(audio, sink="", suffix=audio_suffix))
+        tasks.append(
+            play_audio(audio, sink="", suffix=audio_suffix, volume=args.volume)
+        )
     if args.mic:
-        tasks.append(play_audio(audio, sink="tts-vmic", suffix=audio_suffix))
+        tasks.append(
+            play_audio(audio, sink="tts-vmic", suffix=audio_suffix, volume=args.volume)
+        )
     if args.file:
         tasks.append(_save_file(audio, args.file))
 
