@@ -88,6 +88,11 @@ def parse_args() -> argparse.Namespace:
         default=0.7,
         help="Playback volume 0.0-1.0 (default 0.7, applied to -o/-m only)",
     )
+    p.add_argument(
+        "--interactive",
+        action="store_true",
+        help="Interactive REPL: read lines from stdin, keep model loaded",
+    )
     p.add_argument("text", nargs="?", help="Text to speak")
     return p.parse_args()
 
@@ -99,6 +104,44 @@ async def list_voices(provider: TTSProvider, lang: str | None = None) -> None:
             continue
         locale_display = v.locale if v.locale else "any"
         print(f"{v.name:50s} {v.gender:8s} {locale_display}")
+
+
+async def interactive(
+    provider: TTSProvider, voice: str, args: argparse.Namespace
+) -> None:
+    audio_suffix = ".wav" if provider.name in ("piper-tts", "supertonic") else ".mp3"
+    loop = asyncio.get_running_loop()
+
+    print(
+        f"interactive ({provider.name} — {voice}) — type text, Ctrl+D or empty line to exit",
+        file=sys.stderr,
+    )
+
+    while True:
+        line = await loop.run_in_executor(None, sys.stdin.readline)
+        if not line:
+            break
+        text = line.rstrip("\n")
+        if not text:
+            continue
+
+        try:
+            audio = await provider.synthesize(text, voice, speed=args.speed)
+            tasks = []
+            if args.output:
+                tasks.append(
+                    play_audio(audio, sink="", suffix=audio_suffix, volume=args.volume)
+                )
+            if args.mic:
+                tasks.append(
+                    play_audio(
+                        audio, sink="tts-vmic", suffix=audio_suffix, volume=args.volume
+                    )
+                )
+            if tasks:
+                await asyncio.gather(*tasks)
+        except Exception as e:
+            print(f"error: {e}", file=sys.stderr)
 
 
 async def run() -> None:
@@ -123,6 +166,19 @@ async def run() -> None:
     if args.clear_cache:
         TTSCache().clear()
         print("cache cleared")
+        return
+
+    if args.interactive:
+        if not (args.output or args.mic):
+            print(
+                "error: interactive mode requires -o or -m",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+        voice = resolve_voice(
+            args.lang, args.voice, args.provider, args.voice_name, args.quality
+        )
+        await interactive(provider, voice, args)
         return
 
     if not args.text and not args.input_file:
